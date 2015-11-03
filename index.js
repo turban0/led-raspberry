@@ -3,6 +3,10 @@ var app     = express();
 var http    = require('http').Server(app);
 var io      = require('socket.io')(http);
 var log     = require('./app/log')(io);
+var Gpio    = require('onoff').Gpio;
+
+var led     = new Gpio(18, 'out');
+var button     = new Gpio(17, 'in', 'both');
 
 app.use(express.static(__dirname + '/public'));
 
@@ -18,15 +22,30 @@ io.on('connection', function(socket){
     console.log('Client disconnected');
   });
   socket.on('buttonPressed', function(){
-    //log("Button pressed");
     buttonPressed();
   });
   socket.on('buttonReleased', function(){
-    //log("Button released");
     buttonReleased();
   });
 });
 
+//push button
+button.watch(function(err, state){
+  if(err){
+    throw err;
+  }
+  if(state === 1){
+    buttonPressed();
+  } else {
+    buttonReleased();
+  }
+});
+
+//leds
+function setLed(state) {
+  io.emit("setLedState", state);
+  led.writeSync(state);
+}
 
 //logic
 var state = {
@@ -47,17 +66,17 @@ function buttonPressed(){
       log("Learning");
       timer = new Date();
       clearTimeout(playbackTimeout);
-      io.emit("setLedState", 1);
+      setLed(1);
       break;
     case state.Learning:
       clearTimeout(playbackTimeout);
       savedPattern.push(new Date() - timer);
       timer = new Date();
-      io.emit("setLedState", 1);
+      setLed(1);
       break;
     case state.Playback:
       clearTimeout(playbackTimeout);
-      io.emit("setLedState", 0);
+      setLed(0);
       savedPattern = [];
       timer = undefined;
       currentState = state.StandBy;
@@ -72,7 +91,7 @@ function buttonReleased(){
       savedPattern.push(new Date() - timer);
       timer = new Date();
       playbackTimeout = setTimeout(playback, 5000);
-      io.emit("setLedState", 0);
+      setLed(0);
   }
 }
 
@@ -88,7 +107,7 @@ function playback(){
       log("Led will turn on in " + ms + "ms");
     }
     playbackTimeout = setTimeout(function(){
-      io.emit("setLedState", ++i % 2);
+      setLed(++i % 2);
       var nextDelay = savedPattern.shift();
       if(nextDelay){
         switchLed(nextDelay);
@@ -102,7 +121,7 @@ function playback(){
 
   var nextDelay = savedPattern.shift();
   if(nextDelay) {
-    io.emit("setLedState", ++i % 2);
+    setLed(++i % 2);
     switchLed(nextDelay);
   } else {
     timer = undefined;
